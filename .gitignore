@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Data and outputs
+data/raw/
+data/interim/
+data/processed/
+outputs/
+models/
+
+# OS/editor
+.DS_Store
+.vscode/

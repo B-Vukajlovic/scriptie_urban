@@ -13,7 +13,7 @@ data/raw/
 data/interim/
 data/processed/
 outputs/
-models/
+/models/
 
 # OS/editor
 .DS_Store

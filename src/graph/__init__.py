@@ -1,3 +1,1 @@
-"""Package initialization placeholder."""
-
-# TODO: Expose package-level interfaces when modules are implemented.
+"""Graph utilities for block-level model experiments."""

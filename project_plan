@@ -1,0 +1,502 @@
+\documentclass{uva-inf-article}
+\usepackage[dutch]{babel}
+
+\usepackage{amsmath}
+\usepackage[style=authoryear-comp]{biblatex}
+\addbibresource{references.bib}
+
+\title{Graph Learning for Interpretable Urban Accessibility and Opportunity}
+
+\assignment{Project Plan}
+\assignmenttype{Rapport}
+
+\authors{Boris Vukajlovic}
+\uvanetids{15225054}
+
+\tutor{}
+\mentor{}
+\docent{Rafiazka Hilaman}
+
+\group{-}
+
+\course{Afstudeerproject Informatica}
+\courseid{}
+
+\date{\today}
+
+\begin{document}
+\maketitle
+
+%TC:ignore
+%\tableofcontents
+%\begin{abstract}
+%\end{abstract}
+%TC:endignore
+
+\section{Problem definition}
+
+Cities are spatially interconnected systems in which access to opportunity depends on public transport,
+street network structure and the distribution of destinations such as jobs and daily amenities. These
+factors do not exist independently. The accessibility of one place is partly determined by what can be
+reached from it and partly by the structure of its surrounding urban environment. This project studies
+that interaction across ten U.S. cities using multimodal urban data and graph based machine learning.
+
+The project combines five data sources. GTFS provides public transport supply like routes, stops and service frequencies. OpenStreetMap (OSM) and OSMNX provide amenity locations and street
+network structure. LEHD/LODES provides workplace opportunity through spatially referenced job
+counts. TIGER/Line provides census block boundaries, which are used to define the spatial units and
+their adjacency relations. ACS provides socio demographic context that will be used after the modeling
+stage to analyze which groups are concentrated in high and low accessibility neighborhoods.
+
+The main objective is to construct a block-level accessibility and opportunity score from reachable jobs
+and reachable amenities and then to test whether this score can be predicted from public-transport and
+built-environment characteristics. The target is defined through \emph{reachable opportunities}, whereas the predictors mainly describe \emph{transport
+supply} and \emph{urban form}. Since neighboring blocks influence each other, the project compares
+both a strong non graph baseline and graph based models.
+
+\section{Keywords}
+
+Urban accessibility, opportunity, graph learning, GraphSAGE, graph convolutional networks, XGBoost,
+explainable AI, SHAP values, GNNExplainer, census blocks, GTFS, LEHD/LODES, OSMNX.
+
+\section{Literature review}
+
+The literature relevant to this project can be divided into three parts: accessibility measurement,
+machine learning for urban spatial analysis and graph-based explainable modeling.
+
+First, accessibility research shows that accessibility is best understood through the opportunities that
+can be reached from a location, rather than through the local presence of infrastructure alone.
+\textcite{deboosere2018canadajobsaccessibility} demonstrate this clearly in their study of job
+accessibility by public transport across eleven Canadian metropolitan areas. They treat workplace opportunity as a measurable spatial outcome and shows how such
+an outcome can be studied in a comparative multi city setting. \textcite{gong2023parkaccessibilityhongkong} show that accessibility becomes more meaningful when it
+is derived from realistic spatial indicators rather than from simple geometric assumptions. Although
+their application concerns park access, the big idea is important here as well: accessibility should
+be constructed from what can be reached from a neighborhood.
+
+Second, urban machine learning research shows that multimodal spatial analysis requires careful target
+construction and feature design. \textcite{casali2022spatialurbanml} provide a review of machine
+learning for urban spatial analysis and show that studies in this area often combine transport,
+road-network, land-use and demographic data. Their review is useful because it shows both the
+potential of multimodal urban ML and the need for methodological clarity when defining targets and
+predictors. This is particularly relevant for the present project, where the accessibility target is
+constructed from reachable jobs and amenities, while the predictors are mainly public transport and
+built environment indicators.
+
+Third, graph-based learning provides a natural framework for modeling spatial dependence between
+urban areas. \textcite{xie2025hybridspatiallearning} offer the closest methodological reference for this
+project. They represent urban blocks as graph nodes, use graph neural networks to predict a block-level
+urban outcome, and apply explainable AI to understand the local drivers of the predictions. Their work
+shows that graph learning can capture neighborhood effects more explicitly than standard tabular
+models and that local explanations are necessary if the results are to be analytically useful. For the
+algorithms themselves, \textcite{hamilton2017graphsage} provide the GraphSAGE framework,
+\textcite{kipf2017semi} provide the graph convolutional network (GCN), \textcite{chen2016xgboost}
+provide the main non-graph baseline XGBoost, \textcite{lundberg2017unified} provide SHAP for
+tabular explainability, and \textcite{ying2019gnnexplainer} provide GNNExplainer for local explanations
+of graph neural networks.
+
+Taken together, accessibility can be represented
+through reachable opportunities, urban ML can integrate heterogeneous spatial datasets and graph
+learning can model the spatial dependence between neighborhoods while remaining interpretable
+through SHAP and GNNExplainer.
+
+\section{Research Questions}
+
+There are two research questions proposed in this thesis:
+
+\textbf{RQ 1:} To what extent can XGBoost, GraphSAGE and GCN predict a block level accessibility and
+opportunity score from public-transport supply and built-environment indicators across ten U.S. cities?
+
+\textbf{RQ 2:} Which spatial factors contribute most strongly to accessibility and opportunity and how
+can local explanation methods and clustering reveal recurring patterns such as transport-poor or
+opportunity-poor neighborhoods?
+
+\section{Method and Approach}
+
+The project can be divided into five stages:
+\begin{enumerate}
+    \item data collection and harmonization,
+    \item target construction,
+    \item graph construction and predictive modeling,
+    \item explainability and clustering,
+    \item socio-demographic interpretation and visualization.
+\end{enumerate}
+
+\subsection{Study area and spatial unit}
+
+The study covers ten U.S. cities: New York, Boston, Washington DC, Atlanta, Houston, Denver, Tulsa,
+Little Rock, Santa Cruz and Los Angeles. The main spatial unit is the \textbf{census block}. Each block
+becomes one observation in the tabular dataset and one node in the graph. TIGER/Line provides the
+block geometry and identifiers, from which block centroids are computed.
+
+The choice for census blocks follows the aim of keeping the analysis spatially detailed. Blocks are small
+enough to reflect local transport and urban form differences, yet structured enough to be linked to
+GTFS stops, OSM amenities, LEHD job counts and block adjacency. If severe sparsity or runtime
+problems arise, census tracts will be the fallback unit, but the main design is based on blocks.
+
+\subsection{Data collection and preprocessing}
+
+The following data sources are collected for each city:
+\begin{itemize}
+    \item \textbf{GTFS:} public-transport schedules, stops, routes and service frequencies;
+    \item \textbf{OSM/OSMNX:} street-network geometry and amenity locations;
+    \item \textbf{LEHD/LODES:} workplace locations and counts;
+    \item \textbf{TIGER/Line:} census-block polygons and adjacency;
+    \item \textbf{ACS:} socio-demographic context variables.
+\end{itemize}
+
+The raw files are not used directly as model input. Instead, they are transformed into block-level
+variables and network-based accessibility measures. All spatial layers are projected to a common
+coordinate reference system. For each block, its centroid is used as the origin point for opportunity
+reachability calculations. OSM street networks and GTFS stops are spatially linked to blocks. LEHD
+job counts are assigned to destination blocks and later queried within distance bands around origin
+blocks. ACS variables are processed separately and attached only in the final interpretation stage.
+
+\subsection{Target construction: accessibility and opportunity score}
+
+The supervised target is a continuous \textbf{block-level accessibility and opportunity score}. The score is
+constructed from two components:
+\begin{itemize}
+    \item employment accessibility, based on reachable jobs;
+    \item amenity accessibility, based on reachable amenities.
+\end{itemize}
+
+This target design is the key methodological choice of the project. It makes the learning problem
+non-circular: the target is based on \emph{opportunities that can be reached}, whereas the predictors
+mainly describe \emph{public-transport supply} and \emph{built-environment structure}.
+
+\subsubsection{Employment accessibility}
+
+Let \(b\) denote an origin block and \(j\) a destination block containing jobs. For a radius \(r\), the
+number of reachable jobs from block \(b\) is defined as
+
+\[
+J_b(r)=\sum_{j\in\mathcal{B}} Jobs_j \cdot \mathbf{1}\!\left(d^{net}(b,j)\le r\right),
+\]
+
+where
+\begin{itemize}
+    \item \(\mathcal{B}\) is the set of all destination blocks in the city,
+    \item \(Jobs_j\) is the number of jobs in destination block \(j\),
+    \item \(d^{net}(b,j)\) is the shortest-path distance on the street network between the centroids of
+    blocks \(b\) and \(j\),
+    \item \(\mathbf{1}(\cdot)\) is the indicator function.
+\end{itemize}
+
+This is computed for
+\[
+r\in\{1,2,3,4,5\}\text{ km}.
+\]
+
+This yields five employment-accessibility values for every block.
+
+\subsubsection{Amenity accessibility}
+
+Amenity accessibility is defined analogously. Let \(\mathcal{A}_c\) be the set of amenities of type \(c\),
+where \(c\) belongs to a fixed set of categories such as food/retail, healthcare, education, recreation,
+and public services. Then the number of reachable amenities of type \(c\) from block \(b\) is
+
+\[
+M_{b,c}(r)=\sum_{a\in\mathcal{A}_c}\mathbf{1}\!\left(d^{net}(b,a)\le r\right),
+\]
+
+where \(d^{net}(b,a)\) is the shortest-path distance from the centroid of block \(b\) to amenity \(a\).
+
+Because some amenity categories are much more common than others, counts are first normalized
+within category. The amenity-accessibility component for radius \(r\) is then defined as the mean over
+categories:
+\[
+M_b(r)=\frac{1}{|C|}\sum_{c\in C}\widetilde{M}_{b,c}(r).
+\]
+
+Again, this yields five values per block.
+
+\subsubsection{Normalization}
+
+The raw job and amenity counts differ strongly in scale, so all accessibility components are normalized
+city by city using min--max scaling:
+\[
+z_{bk}=\frac{x_{bk}-\min(x_k)}{\max(x_k)-\min(x_k)}.
+\]
+
+This means the final target is interpreted as a \emph{relative within-city accessibility and opportunity
+score}. The main analytical focus is therefore on spatial structure within each city and on general
+patterns across cities, rather than on direct absolute comparisons of raw opportunity volume between
+very different urban systems.
+
+\subsubsection{Distance aggregation}
+
+Closer opportunities should contribute more strongly than distant ones. Therefore, a distance-decay
+weighting is applied:
+\[
+\alpha_1=0.30,\quad \alpha_2=0.25,\quad \alpha_3=0.20,\quad \alpha_4=0.15,\quad \alpha_5=0.10.
+\]
+
+The aggregated employment accessibility of block \(b\) is
+\[
+E_b=\sum_{k=1}^{5}\alpha_k \widetilde{J}_b(r_k),
+\]
+and the aggregated amenity accessibility is
+\[
+A_b=\sum_{k=1}^{5}\alpha_k \widetilde{M}_b(r_k).
+\]
+
+\subsubsection{Final target score}
+
+The final target score is
+\[
+Y_b=\lambda E_b+(1-\lambda)A_b.
+\]
+
+The main specification uses equal importance for employment and amenities:
+\[
+Y_b=0.5E_b+0.5A_b.
+\]
+
+Two alternative specifications are used as robustness checks:
+\[
+Y_b^{(1)}=0.6E_b+0.4A_b,\qquad
+Y_b^{(2)}=0.4E_b+0.6A_b.
+\]
+
+In addition, a sensitivity analysis will test whether conclusions remain stable under alternative radius
+choices and under a reduced amenity category set. This is important because the target contains design
+choices that are reasonable but not uniquely determined.
+
+\subsection{Predictor construction}
+
+The predictor set contains \textbf{public-transport} and \textbf{built-environment} variables. ACS variables are
+deliberately excluded from the core predictive model and are used only after the modeling stage for
+equity interpretation.
+
+\paragraph{Public-transport predictors.}
+From GTFS, the following block-level predictors are constructed:
+\begin{itemize}
+    \item stop or station count,
+    \item stop density,
+    \item total weekday service frequency,
+    \item number of distinct routes,
+    \item modal variety,
+    \item average scheduled headway.
+\end{itemize}
+
+\paragraph{Built-environment predictors.}
+From OSM/OSMNX and TIGER/Line, the following block-level predictors are constructed:
+\begin{itemize}
+    \item total street length density,
+    \item bikeable street length density,
+    \item intersection density,
+    \item road-network connectivity,
+    \item block compactness,
+    \item land-use diversity.
+\end{itemize}
+
+\textbf{Raw amenity counts are not reused as predictors}, because they
+already contribute to the target through \(A_b\). This avoids leakage. Likewise, the exact job-access
+variables used in the target are not reused unchanged as predictors.
+
+The final feature vector for block \(b\) is therefore
+\[
+\mathbf{x}_b=[x^{PT}_{b1},\dots,x^{PT}_{bp},x^{BE}_{b1},\dots,x^{BE}_{bq}].
+\]
+
+\subsection{Graph construction}
+
+The urban area is represented as an adjacency-only graph
+\[
+G=(V,E),
+\]
+where every census block is a node:
+\[
+V=\{b_1,b_2,\dots,b_n\},
+\]
+and an edge is added between two blocks if their polygons share a boundary:
+\[
+E=\{(b_i,b_j)\mid b_i \text{ and } b_j \text{ are adjacent}\}.
+\]
+
+This graph is intentionally simple. It is spatially interpretable, feasible within the thesis timeframe,
+and sufficient to test whether spatial context improves prediction. Since the study covers ten cities, the
+combined graph is a disconnected graph with one connected component per city.
+
+\subsection{Predictive models}
+
+Three regression models are used to predict \(Y_b\).
+
+\paragraph{XGBoost.}
+The first model is XGBoost, used as a strong non-graph baseline. For a dataset
+\(\{(\mathbf{x}_i,y_i)\}_{i=1}^{N}\), the prediction is
+\[
+\hat{y}_i=\sum_{t=1}^{T} f_t(\mathbf{x}_i),
+\]
+where each \(f_t\) is a regression tree. The objective function is
+\[
+\mathcal{L}=\sum_{i=1}^{N} l(y_i,\hat{y}_i)+\sum_{t=1}^{T}\Omega(f_t),
+\]
+with \(l\) a regression loss and \(\Omega\) a regularization term.
+
+\paragraph{GraphSAGE.}
+The second model is GraphSAGE. For node \(v\) at layer \(k\), the update is
+\[
+h_v^{(k)}=
+\sigma\!\left(
+W^{(k)}\cdot
+\mathrm{AGG}\!\left(
+\{h_v^{(k-1)}\}\cup\{h_u^{(k-1)}:u\in\mathcal{N}(v)\}
+\right)
+\right),
+\]
+where \(h_v^{(0)}=\mathbf{x}_v\).
+
+\paragraph{GCN.}
+The third model is a graph convolutional network. A standard layer update is
+\[
+H^{(k+1)}=\sigma\!\left(\tilde{D}^{-1/2}\tilde{A}\tilde{D}^{-1/2}H^{(k)}W^{(k)}\right),
+\]
+where \(\tilde{A}=A+I\) is the adjacency matrix with self-loops, \(\tilde{D}\) is the corresponding degree
+matrix, \(H^{(0)}=X\) and \(W^{(k)}\) are trainable parameters.
+
+All three models operate in a regression setting and use \(Y_b\) as the target.
+
+\subsection{Explainability and clustering}
+
+To interpret the models:
+\begin{itemize}
+    \item XGBoost is explained with SHAP values;
+    \item GraphSAGE and GCN are explained with GNNExplainer.
+\end{itemize}
+
+SHAP provides global and local feature contributions for the tabular baseline. GNNExplainer provides
+local explanations for the graph models by identifying which node features and neighboring nodes are
+most influential for a prediction.
+
+The resulting explanation vectors are then clustered, for example with \(k\)-means, to identify recurring
+spatial profiles. The aim is to move from single-block explanations to interpretable neighborhood
+types, such as transport-poor blocks, street-network-limited blocks or blocks with strong
+opportunities despite modest transport supply.
+
+\subsection{ACS-based interpretation}
+
+After the main modeling stage, ACS variables are linked to the spatial units and used for
+socio-demographic interpretation. Because ACS variables are not available at true census-block level,
+they will be attached through the most appropriate higher-resolution geography, such as block groups
+or tracts.
+
+The ACS stage addresses questions such as:
+\begin{itemize}
+    \item which groups are concentrated in the lowest accessibility deciles,
+    \item whether low-accessibility areas are associated with income or demographic patterns,
+    \item whether different explanation clusters correspond to different social contexts.
+\end{itemize}
+
+\section{Evaluation}
+
+Models are evaluated with the standard regression metrics
+\[
+RMSE=\sqrt{\frac{1}{N}\sum_{i=1}^{N}(y_i-\hat{y}_i)^2},
+\]
+\[
+MAE=\frac{1}{N}\sum_{i=1}^{N}|y_i-\hat{y}_i|,
+\]
+and
+\[
+R^2=1-\frac{\sum_{i=1}^{N}(y_i-\hat{y}_i)^2}{\sum_{i=1}^{N}(y_i-\bar{y})^2}.
+\]
+
+A simple random node split would create spatial leakage, especially for the graph models. Therefore,
+the main evaluation will be \textbf{spatially aware}. Within each city, blocks will be partitioned into
+spatial clusters or contiguous subareas and holdout sets will be defined at that level rather than by
+randomly sampling individual blocks. In addition, a leave-one-city-out experiment will be used as a
+transferability test across urban environments.
+
+Evaluation is not limited to predictive accuracy. The explanation stage is also evaluated qualitatively:
+\begin{itemize}
+    \item do SHAP and GNNExplainer identify plausible spatial drivers,
+    \item do clustered explanation profiles correspond to interpretable neighborhood types,
+    \item does the ACS-based interpretation reveal clear socio-demographic inequalities?
+\end{itemize}
+
+The project pipeline can therefore be summarized as follows:
+\begin{itemize}
+    \item \textbf{Data preprocessing}
+    \begin{itemize}
+        \item Collecting GTFS, OSM/OSMNX, LEHD/LODES, ACS and TIGER/Line data.
+        \item Harmonizing all sources at census-block level.
+    \end{itemize}
+    \item \textbf{Target construction}
+    \begin{itemize}
+        \item Computing reachable jobs within 1--5 km.
+        \item Computing reachable amenities within 1--5 km.
+        \item Normalizing and aggregating these into \(Y_b\).
+    \end{itemize}
+    \item \textbf{Feature construction}
+    \begin{itemize}
+        \item Constructing PT predictors from GTFS.
+        \item Constructing BE predictors from OSM/OSMNX and TIGER/Line.
+    \end{itemize}
+    \item \textbf{Graph construction}
+    \begin{itemize}
+        \item Representing census blocks as nodes.
+        \item Connecting adjacent blocks with edges.
+    \end{itemize}
+    \item \textbf{Prediction}
+    \begin{itemize}
+        \item Training XGBoost, GraphSAGE and GCN to predict \(Y_b\).
+    \end{itemize}
+    \item \textbf{Explanation and clustering}
+    \begin{itemize}
+        \item Applying SHAP and GNNExplainer.
+        \item Clustering explanation profiles.
+    \end{itemize}
+    \item \textbf{Interpretation and visualization}
+    \begin{itemize}
+        \item Using ACS for post hoc socio-demographic interpretation.
+        \item Building the prototype dashboard.
+    \end{itemize}
+\end{itemize}
+
+\section{Plan}
+
+The project is divided into four phases:
+exploration, implementation, evaluation, and finalizing. Writing will take place throughout the
+project, so that methodological choices and intermediate results are documented while the research
+is still in progress.
+
+A milestone is placed after week 6. By then, the harmonized dataset, the final accessibility target,
+and the first working model implementations should be available. If the project falls behind
+schedule, the priority is to preserve the core contribution: target construction for all cities,
+XGBoost and at least one graph model, one explanation method per model family, and a
+lightweight dashboard.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{ll}
+\hline
+\textbf{Week} & \textbf{Activity} \\
+\hline
+1 & Literature review and familiarizing with the datasets \\
+2 & Finalizing the project plan and fixing the target and feature definitions \\
+3 & Collecting and harmonizing GTFS, OSM/OSMNX, LEHD/LODES, ACS, and TIGER/Line data \\
+4 & Computing reachable jobs and reachable amenities for all cities \\
+5 & Constructing the final accessibility/opportunity target and building the city graphs \\
+6 & Implementing XGBoost, GraphSAGE, and GCN; writing the first thesis draft sections \\
+7 & Training and validating the predictive models; preparing the midterm presentation \\
+8 & Applying SHAP and GNNExplainer \\
+9 & Clustering explanation profiles and linking ACS variables for interpretation \\
+10 & Building the prototype dashboard and consolidating results \\
+11 & Finalizing thesis writing and revising figures and analysis \\
+12 & Finalizing thesis writing and preparing the presentation \\
+\hline
+\end{tabular}
+\caption{Weekly thesis plan}
+\label{tab:plan}
+\end{table}
+
+\printbibliography
+
+%TC:ignore
+\appendix
+\section{Bijlage {\LaTeX} code}
+Bijgevoegd zijn de \textattachfile{main.tex}{code} en
+\textattachfile{references.bib}{bibliografie}.
+%TC:endignore
+
+\end{document}

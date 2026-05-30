@@ -95,12 +95,18 @@ def _empty_pt_features(block_ids: pd.Series) -> pd.DataFrame:
             "pt_peak_departures": 0.0,
             "pt_offpeak_departures": 0.0,
             "pt_peak_departure_share": 0.0,
+            "pt_departures_per_stop": 0.0,
+            "pt_routes_per_stop": 0.0,
+            "pt_peak_departures_per_route": 0.0,
             "pt_avg_headway_min": 1440.0,
             "pt_first_departure_min": 1440.0,
             "pt_last_departure_min": 0.0,
             "pt_service_span_hours": 0.0,
             "pt_modal_variety": 0.0,
             "pt_nearest_stop_dist_m": PT_NEAREST_FALLBACK_DIST_M,
+            "pt_nearest_stop_departures": 0.0,
+            "pt_nearest_stop_peak_departures": 0.0,
+            "pt_nearest_stop_route_count": 0.0,
             "pt_connected_blocks_same_route": 0.0,
             **{
                 f"pt_has_{mode}_service": 0.0
@@ -144,6 +150,18 @@ def _empty_pt_features(block_ids: pd.Series) -> pd.DataFrame:
             },
             **{
                 f"pt_peak_departures_within_{radius}m": 0.0
+                for radius in PT_CATCHMENT_RADII_M
+            },
+            **{
+                f"pt_departures_per_stop_within_{radius}m": 0.0
+                for radius in PT_CATCHMENT_RADII_M
+            },
+            **{
+                f"pt_routes_per_stop_within_{radius}m": 0.0
+                for radius in PT_CATCHMENT_RADII_M
+            },
+            **{
+                f"pt_peak_departure_share_within_{radius}m": 0.0
                 for radius in PT_CATCHMENT_RADII_M
             },
             **{
@@ -371,11 +389,40 @@ def build_gtfs_features(
             )
             stop_tree = KDTree(unique_stop_xy)
             centroid_ids = centroids["block_id"].astype(str).tolist()
+            nearest_unique_dists, nearest_unique_idxs = stop_tree.query(centroid_xy)
+            nearest_unique_idxs = np.asarray(nearest_unique_idxs, dtype=int)
+            valid_nearest = np.asarray(nearest_unique_dists, dtype=float) <= PT_NEAREST_FALLBACK_DIST_M
+            nearest_departures = np.where(
+                valid_nearest,
+                service_by_stop["departures"].to_numpy(dtype=float)[nearest_unique_idxs],
+                0.0,
+            )
+            nearest_peak_departures = np.where(
+                valid_nearest,
+                service_by_stop["peak_departures"].to_numpy(dtype=float)[nearest_unique_idxs],
+                0.0,
+            )
+            nearest_route_counts = np.where(
+                valid_nearest,
+                np.array([len(stop_route_sets[idx]) for idx in nearest_unique_idxs], dtype=float),
+                0.0,
+            )
+            features["pt_nearest_stop_departures"] = pd.Series(
+                nearest_departures,
+                index=centroid_ids,
+            ).reindex(features.index)
+            features["pt_nearest_stop_peak_departures"] = pd.Series(
+                nearest_peak_departures,
+                index=centroid_ids,
+            ).reindex(features.index)
+            features["pt_nearest_stop_route_count"] = pd.Series(
+                nearest_route_counts,
+                index=centroid_ids,
+            ).reindex(features.index)
 
             for mode in PT_MODE_NAMES:
                 mode_service = service_by_stop_mode[mode]
                 mode_stop_mask = mode_service["departures"].to_numpy(dtype=float) > 0
-                features[f"pt_has_{mode}_service"] = float(mode_stop_mask.any())
                 if mode_stop_mask.any():
                     mode_tree = KDTree(unique_stop_xy[mode_stop_mask])
                     mode_dists, _ = mode_tree.query(centroid_xy)
@@ -405,6 +452,18 @@ def build_gtfs_features(
                     features[f"pt_{metric}_within_{radius}m"] = (
                         catchment[metric].fillna(0.0).astype(float)
                     )
+                features[f"pt_departures_per_stop_within_{radius}m"] = (
+                    catchment["departures"]
+                    / catchment["stops"].replace(0, np.nan)
+                ).fillna(0.0).astype(float)
+                features[f"pt_routes_per_stop_within_{radius}m"] = (
+                    catchment["routes"]
+                    / catchment["stops"].replace(0, np.nan)
+                ).fillna(0.0).astype(float)
+                features[f"pt_peak_departure_share_within_{radius}m"] = (
+                    catchment["peak_departures"]
+                    / catchment["departures"].replace(0, np.nan)
+                ).fillna(0.0).astype(float)
 
                 for mode in PT_MODE_NAMES:
                     mode_catchment = _aggregate_catchment_service(
@@ -446,6 +505,18 @@ def build_gtfs_features(
             features["pt_peak_departures"]
             / features["pt_weekday_departures"].replace(0, np.nan)
         ).fillna(0.0)
+        features["pt_departures_per_stop"] = (
+            features["pt_weekday_departures"]
+            / features["pt_stop_count"].replace(0, np.nan)
+        ).fillna(0.0)
+        features["pt_routes_per_stop"] = (
+            features["pt_route_count"]
+            / features["pt_stop_count"].replace(0, np.nan)
+        ).fillna(0.0)
+        features["pt_peak_departures_per_route"] = (
+            features["pt_peak_departures"]
+            / features["pt_route_count"].replace(0, np.nan)
+        ).fillna(0.0)
         first_departure = event_group["departure_min"].min()
         last_departure = event_group["departure_min"].max()
         features["pt_first_departure_min"] = (
@@ -480,6 +551,7 @@ def build_gtfs_features(
                 .astype(float)
             )
             features[f"pt_{mode}_stop_count"] = stop_count
+            features[f"pt_has_{mode}_service"] = (stop_count > 0).astype(float)
             features[f"pt_{mode}_stop_density_per_km2"] = (stop_count / area).fillna(0.0)
             features[f"pt_{mode}_route_count"] = (
                 mode_group["route_key"].nunique().reindex(features.index).fillna(0).astype(float)

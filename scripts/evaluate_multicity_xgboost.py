@@ -270,7 +270,7 @@ def select_feature_set(
         if not path.exists():
             raise FileNotFoundError(
                 f"Reduced feature set not found: {path}. "
-                "Build it first with scripts/build_reduced_feature_set.py."
+                "Pass one of the final feature-set JSON files in data/interim/modeling/."
             )
         with path.open("r", encoding="utf-8") as f:
             payload = json.load(f)

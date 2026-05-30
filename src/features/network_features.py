@@ -375,6 +375,10 @@ def build_network_features(
 
     out = out.set_index("block_id")
     area_km2 = (out["be_block_area_m2"] / 1_000_000).replace(0, np.nan)
+    perimeter_by_block = pd.Series(
+        blocks.geometry.length.astype(float).to_numpy(),
+        index=blocks["block_id"].astype(str),
+    ).replace(0, np.nan)
 
     total_len = _length_by_block(blocks, lines, "length_m")
     bike_len = _length_by_block(blocks, lines, "bike_length_m", BIKEABLE_HIGHWAY_TYPES)
@@ -386,6 +390,11 @@ def build_network_features(
     out["be_street_length_density_m_per_km2"] = (out["be_street_length_m"] / area_km2).fillna(0.0)
     out["be_bikeable_street_length_density_m_per_km2"] = (
         out["be_bikeable_street_length_m"] / area_km2
+    ).fillna(0.0)
+    out["be_block_area_km2"] = (out["be_block_area_m2"] / 1_000_000).fillna(0.0)
+    out["be_inverse_block_area_per_km2"] = (1.0 / area_km2).replace(
+        [np.inf, -np.inf],
+        0.0,
     ).fillna(0.0)
     out["be_bikeable_street_share"] = (
         out["be_bikeable_street_length_m"] / out["be_street_length_m"].replace(0, np.nan)
@@ -431,6 +440,15 @@ def build_network_features(
         out["be_avg_node_degree"] = 0.0
 
     out["be_intersection_density_per_km2"] = (out["be_intersection_count"] / area_km2).fillna(0.0)
+    out["be_intersections_per_street_km"] = (
+        out["be_intersection_count"] / (out["be_street_length_m"] / 1_000).replace(0, np.nan)
+    ).fillna(0.0)
+    out["be_nodes_per_street_km"] = (
+        out["be_road_node_count"] / (out["be_street_length_m"] / 1_000).replace(0, np.nan)
+    ).fillna(0.0)
+    out["be_street_length_perimeter_ratio"] = (
+        out["be_street_length_m"] / perimeter_by_block.reindex(out.index)
+    ).fillna(0.0)
 
     degree_counts = pd.concat(
         [
@@ -445,6 +463,28 @@ def build_network_features(
         landuse_features = landuse_features.set_index("block_id")
         for col in landuse_features.columns:
             out[col] = landuse_features[col].reindex(out.index).fillna(0.0)
+
+    out["be_nonresidential_landuse_share"] = (
+        out["be_landuse_commercial_share"]
+        + out["be_landuse_retail_share"]
+        + out["be_landuse_industrial_share"]
+        + out["be_landuse_civic_share"]
+    ).clip(0.0, 1.0)
+    out["be_activity_landuse_share"] = (
+        out["be_landuse_commercial_share"]
+        + out["be_landuse_retail_share"]
+        + out["be_landuse_civic_share"]
+    ).clip(0.0, 1.0)
+    out["be_development_intensity"] = (
+        out["be_building_footprint_share"] * np.log1p(out["be_building_count_density_per_km2"])
+    ).fillna(0.0)
+    out["be_walkability_proxy"] = (
+        np.log1p(out["be_intersection_density_per_km2"])
+        + np.log1p(out["be_street_length_density_m_per_km2"])
+        + out["be_landuse_entropy"]
+        + out["be_building_footprint_share"]
+        - out["be_major_road_share"]
+    ).fillna(0.0)
 
     metadata = {
         "n_street_lines": int(len(lines)),

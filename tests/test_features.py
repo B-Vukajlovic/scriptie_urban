@@ -57,12 +57,22 @@ def test_empty_pt_features_include_wide_context_catchments():
 	assert features.loc[0, "pt_nearest_stop_dist_m"] == PT_NEAREST_FALLBACK_DIST_M
 	for column in [
 		"pt_peak_departure_share",
+		"pt_departures_per_stop",
+		"pt_routes_per_stop",
+		"pt_peak_departures_per_route",
 		"pt_first_departure_min",
 		"pt_last_departure_min",
 		"pt_service_span_hours",
+		"pt_nearest_stop_departures",
+		"pt_nearest_stop_peak_departures",
+		"pt_nearest_stop_route_count",
 		"pt_connected_blocks_same_route",
 	]:
 		assert column in features.columns
+	for radius in PT_CATCHMENT_RADII_M:
+		assert f"pt_departures_per_stop_within_{radius}m" in features.columns
+		assert f"pt_routes_per_stop_within_{radius}m" in features.columns
+		assert f"pt_peak_departure_share_within_{radius}m" in features.columns
 
 
 def test_route_mode_maps_basic_and_extended_gtfs_types():

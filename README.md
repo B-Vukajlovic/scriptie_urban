@@ -1,75 +1,66 @@
-# urban-accessibility-thesis
+# Urban Accessibility Thesis
 
-Pipeline for building block-level accessibility targets, leakage-safe spatial
-features, and thesis-facing model evaluations across the selected US cities.
+This repository builds and evaluates a thesis pipeline for predicting
+block-level distance-based opportunity accessibility across ten US cities.
 
-## Script Workflow
+The current final scope is documented in [METHOD_PIPELINE.md](METHOD_PIPELINE.md).
 
-The script folder is intentionally split into three groups.
+## Current Thesis Scope
 
-### City Data Preparation
+- Target: `Y_global_log_minmax`
+- Accessibility: road-network distance-based access to LEHD jobs and OSM
+  amenities
+- Predictors: block-level public transport and built-environment indicators
+- Graph: Census-block adjacency
+- Models: XGBoost, GCN, GraphSAGE
+- Evaluation: pooled spatial train/validation/test holdout
+- Explainability: SHAP for XGBoost, PyG GNNExplainer for graph models
 
-```bash
-python scripts/run_city_data_pipeline.py --cities denver
-```
+## Active Workflow
 
-This runs, in order:
+The final script workflow is documented in [scripts/README.md](scripts/README.md).
+
+Main stages:
 
 ```text
-build_city_backbone.py      TIGER blocks, centroids, adjacency, QC
-build_city_target.py        reachable LEHD jobs + OSM amenities target
-build_city_features.py      leakage-safe GTFS, OSM built environment, ACS features
-build_city_model_dataset.py      joined supervised modeling table
-diagnose_city_model_dataset.py   split/feature/target diagnostics
+scripts/run_city_data_pipeline.py
+scripts/build_global_targets.py
+scripts/evaluate_multicity_xgboost.py
+scripts/evaluate_pyg_gnn.py
+scripts/explain_multicity_xgboost_shap.py
+scripts/cluster_xgboost_shap_signatures.py
+scripts/cluster_gnn_explainer_signatures.py
+scripts/plot_block_only_sensitivity.py
 ```
-
-Run a specific stage when needed:
-
-```bash
-python scripts/run_city_data_pipeline.py --cities denver --stages features model_dataset
-```
-
-### Model Evaluation
-
-Use the multi-city scripts for reportable model results:
-
-```bash
-python scripts/evaluate_multicity_xgboost.py --n-jobs 4
-python scripts/evaluate_multicity_gnn.py --models gcn graphsage --evaluation-mode single_spatial_cv
-```
-
-`evaluate_multicity_xgboost.py` reports pooled single-spatial-split performance
-and leave-one-city-out generalization. `evaluate_multicity_gnn.py` trains true
-GCN/GraphSAGE regressors on the block graph.
-
-### Explainability And Reports
-
-```bash
-python scripts/explain_multicity_xgboost_shap.py --n-jobs 4
-python scripts/build_shap_report.py
-python scripts/build_model_comparison_report.py
-```
-
-These create SHAP tables/figures and compact model-comparison outputs under
-`outputs/`.
 
 ## Data Layout
 
-Raw inputs live under `data/raw/`:
+Raw inputs live under `data/raw/` and are ignored by git:
 
 ```text
-acs/    ACS tract socioeconomic predictors
-gtfs/   transit feeds by city/agency
-lehd/   state-level LEHD WAC files
-osm/    state OSM PBF extracts
-tiger/  Census TIGER/Line geometries
+acs/    ACS tract data, used mainly for exploratory/post-hoc context
+gtfs/   GTFS feeds by city/agency
+lehd/   LEHD workplace area characteristics
+osm/    OSM PBF extracts
+tiger/  Census TIGER/Line block geometries
 ```
 
 Intermediate city artifacts are written to `data/interim/{city}/`.
 
-## Current Modeling Target
+## Outputs
 
-The target table contains a normalized accessibility score `Y` built from
-reachable employment opportunities and reachable amenities within network
-distance radii. Predictor tables intentionally exclude target ingredients such
-as reachable job totals and reachable amenity counts to avoid leakage.
+Use `outputs/final/` for thesis-facing artifacts. Older experiments are
+preserved under `outputs/archive/`.
+
+## Tests
+
+Run the focused method tests with:
+
+```bash
+.venv/bin/python -m pytest \
+  tests/test_features.py \
+  tests/test_target.py \
+  tests/test_modeling_dataset.py \
+  tests/test_gnn_models.py \
+  tests/test_xgboost_feature_views.py
+```
